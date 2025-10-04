@@ -237,30 +237,36 @@ void main() {
                     }
 
                     case VAR_INIT -> {
-                        case "DELIM" -> 
+                        switch (last_token.type){
+                            case "DELIM" -> 
                                 if(last_token.value == ';'){
                                     current_state = transition_table[current_state.ordinal()][Events.PIPE.ordinal()];
                                 }
                                 IO.println("Compilation Error: wrong delimiter used, end statements with \";\"");
                             default ->
                                 IO.println("Compilation Error: must end an assignment with ;");
+                        }
                     }
 
                     case ASSIGN_LHS -> {
-                        case "VALUE" -> 
-                            current_state = transition_table[current_state.ordinal()][Events.VALUE.ordinal()];
-                        default ->
-                            IO.println("Compilation Error: Need to follow a variable identifier with a value to assign it to");
+                        switch (last_token.type){
+                            case "VALUE" -> 
+                                current_state = transition_table[current_state.ordinal()][Events.VALUE.ordinal()];
+                            default ->
+                                IO.println("Compilation Error: Need to follow a variable identifier with a value to assign it to");
+                        }
                     }
 
                     case ASSIGN_VALUE -> {
-                         case "DELIM" -> 
+                        switch (last_token.type){
+                            case "DELIM" -> 
                                 if(last_token.value == ';'){
                                     current_state = transition_table[current_state.ordinal()][Events.PIPE.ordinal()];
                                 }
                                 IO.println("Compilation Error: wrong delimiter used, end statements with \";\"");
                             default ->
                                 IO.println("Compilation Error: must end an assignment with ;");
+                        }
                     }
 
                     default -> eof = true;
