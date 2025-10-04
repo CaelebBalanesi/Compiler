@@ -61,7 +61,7 @@ String nextToken(List<Token> tokens, String data) {
     char c = data.charAt(0);
 
     // Delimiters
-    if (c == '|' || c == '(' || c == ')') {
+    if (c == '|' || c == '(' || c == ')' || c == ';') {
         tokens.add(new Token("DELIM", String.valueOf(c)));
         return data.substring(1).trim();
     }
@@ -137,6 +137,24 @@ void main() {
     transition_table[States.START.ordinal()][Events.ELIF.ordinal()] = States.ELIF_STMT;     // START -elif-> ELIF_STMT
     transition_table[States.START.ordinal()][Events.ELSE.ordinal()] = States.ELSE_STMT;     // START -else-> ELSE_STMT
 
+    //VAR_DEC
+    transition_table[States.VAR_DEC.ordinal()][Events.IDENTIFIER.ordinal()] = States.VAR_NAME_DEC;
+
+    //VAR_NAME_DEC
+    transition_table[States.VAR_NAME_DEC.ordinal()][Events.VALUE.ordinal()] = States.VAR_INIT;
+    transition_table[States.VAR_NAME_DEC.ordinal()][Events.PIPE.ordinal()] = States.START;
+
+    //ASSIGN_LHS
+    transition_table[States.ASSIGN_LHS.ordinal()][Events.VALUE.ordinal()] = States.ASSIGN_VALUE;
+
+    //ASSIGN_VALUE
+    transition_table[States.ASSIGN_VALUE.ordinal()][Events.PIPE.ordinal()] = States.START;
+
+    //WHILE_LOOP
+    transition_table[States.WHILE_LOOP.ordinal()][Events.PIPE.ordinal()] = States.WHILE_COND;
+
+
+
     try {
         File myFile = new File("main.cj");
         Scanner myReader = new Scanner(myFile);
@@ -154,15 +172,16 @@ void main() {
                 IO.println(tokens);
                 switch (current_state) {
 
+                    if (data.isEmpty()) {
+                        eof = true;
+                        break;
+                    }
+
+                    data = nextToken(tokens, data);
+                    Token last_token = tokens.getLast();
                     case START -> {
 
-                        if (data.isEmpty()) {
-                            eof = true;
-                            break;
-                        }
-
-                        data = nextToken(tokens, data);
-                        Token last_token = tokens.getLast();
+                    
                         switch (last_token.type) {
                             case "KEYWORD" -> {
                                 switch (last_token.value) {
@@ -189,6 +208,59 @@ void main() {
                             case "DELIM" ->
                                     current_state = transition_table[current_state.ordinal()][Events.PIPE.ordinal()];
                         }
+                    }
+
+                    case VAR_DEC -> {
+
+                        switch (last_token.type){
+                            case "IDENTIFIER" ->
+                                current_state = transition_table[current_state.ordinal()][Events.IDENTIFIER.ordinal()];
+                            default ->
+                                IO.println("Compilation Error: after the variable type should come the variable identifer");
+                        }
+
+                    }
+
+                    case VAR_NAME_DEC -> {
+                        
+                        switch(last_token.type){
+                            case "VALUE" -> 
+                                current_state = transition_table[current_state.ordinal()][Events.VALUE.ordinal()];
+                            case "DELIM" -> 
+                                if(last_token.value == ';'){
+                                    current_state = transition_table[current_state.ordinal()][Events.PIPE.ordinal()];
+                                }
+                                IO.println("Compilation Error: wrong delimiter used, end statements with \";\"");
+                            default ->
+                                IO.println("Compilation Error: must follow a name declaration with either a value or ;");
+                        }
+                    }
+
+                    case VAR_INIT -> {
+                        case "DELIM" -> 
+                                if(last_token.value == ';'){
+                                    current_state = transition_table[current_state.ordinal()][Events.PIPE.ordinal()];
+                                }
+                                IO.println("Compilation Error: wrong delimiter used, end statements with \";\"");
+                            default ->
+                                IO.println("Compilation Error: must end an assignment with ;");
+                    }
+
+                    case ASSIGN_LHS -> {
+                        case "VALUE" -> 
+                            current_state = transition_table[current_state.ordinal()][Events.VALUE.ordinal()];
+                        default ->
+                            IO.println("Compilation Error: Need to follow a variable identifier with a value to assign it to");
+                    }
+
+                    case ASSIGN_VALUE -> {
+                         case "DELIM" -> 
+                                if(last_token.value == ';'){
+                                    current_state = transition_table[current_state.ordinal()][Events.PIPE.ordinal()];
+                                }
+                                IO.println("Compilation Error: wrong delimiter used, end statements with \";\"");
+                            default ->
+                                IO.println("Compilation Error: must end an assignment with ;");
                     }
 
                     default -> eof = true;
