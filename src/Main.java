@@ -1,44 +1,28 @@
 import java.io.File;
 import java.io.FileNotFoundException;
-import java.util.Scanner;
+import java.util.*;
 
 enum States {
     START,
-    ASSIGN_LHS,
-    ASSIGN_VALUE,
-    VAR_DEC,
-    VAR_NAME_DEC,
-    VAR_INIT,
-    FOR_LOOP,
-    FOR_DECL,
-    FOR_COND,
-    FOR_CTRL,
-    FOR_BLOCK,
-    WHILE_LOOP,
-    WHILE_COND,
-    WHILE_BLOCK,
-    IF_STMT,
-    ELIF_STMT,
-    ELSE_STMT,
-    COND_BLOCK
+    IDENTIFIER,
+    NUMBER,
+    DECIMAL,
+    OPERATOR,
+    DELIM,
+    ACCEPT,
+    ERROR
 }
 
 enum Events {
-    NUM,
-    DEC,
-    IDENTIFIER,
-    VALUE,
-    END,
-    FOR,
-    DURING,
-    IF,
-    ELIF,
-    ELSE,
-    PIPE,
-    BLOCK_START,
-    BLOCK_END
+    LETTER,
+    DIGIT,
+    DOT,
+    OPERATOR,
+    DELIM,
+    WHITESPACE,
+    UNKNOWN,
+    END
 }
-
 
 static class Token {
     String type;
@@ -54,231 +38,159 @@ static class Token {
     }
 }
 
-String nextToken(List<Token> tokens, String data) {
-    data = data.trim();
-    if (data.isEmpty()) return "";
+// Return what EVENT a character fits into
+static Events classifyChar(char c) {
+    if (Character.isLetter(c)) return Events.LETTER;
+    if (Character.isDigit(c)) return Events.DIGIT;
+    if (c == '.') return Events.DOT;
+    if ("+-*/=!<>".indexOf(c) != -1) return Events.OPERATOR;
+    if ("();|".indexOf(c) != -1) return Events.DELIM;
+    if (Character.isWhitespace(c)) return Events.WHITESPACE;
+    return Events.UNKNOWN;
+}
 
-    char c = data.charAt(0);
+// Add Token to token list with buffer data once accepted
+static void emitToken(List<Token> tokens, String buffer, States state) {
+    if (buffer.isEmpty()) return;
 
-    // Delimiters
-    if (c == '|' || c == '(' || c == ')' || c == ';') {
-        tokens.add(new Token("DELIM", String.valueOf(c)));
-        return data.substring(1).trim();
-    }
-
-    // Operators
-    if ("+-*/".indexOf(c) != -1) {
-        tokens.add(new Token("OPERATOR", String.valueOf(c)));
-        return data.substring(1).trim();
-    }
-
-    // Comparison operators
-    if (c == '<' || c == '>') {
-        if (data.length() > 1 && data.charAt(1) == '=') {
-            tokens.add(new Token("OPERATOR", data.substring(0, 2)));
-            return data.substring(2).trim();
+    if (state == States.IDENTIFIER) {
+        if (buffer.equals("for") || buffer.equals("during") || buffer.equals("if") ||
+                buffer.equals("elif") || buffer.equals("else") ||
+                buffer.equals("num") || buffer.equals("dec")) {
+            tokens.add(new Token("KEYWORD", buffer));
         } else {
-            tokens.add(new Token("OPERATOR", String.valueOf(c)));
-            return data.substring(1).trim();
+            tokens.add(new Token("IDENTIFIER", buffer));
         }
+    } else if (state == States.NUMBER || state == States.DECIMAL) {
+        tokens.add(new Token("LITERAL", buffer));
+    } else if (state == States.OPERATOR) {
+        tokens.add(new Token("OPERATOR", buffer));
+    } else if (state == States.DELIM) {
+        tokens.add(new Token("DELIM", buffer));
     }
-    if (c == '=' || c == '!') {
-        tokens.add(new Token("OPERATOR", String.valueOf(c)));
-        return data.substring(1).trim();
-    }
-
-    // Identifiers or keywords
-    if (Character.isLetter(c)) {
-        int idx = 0;
-        while (idx < data.length() && Character.isLetterOrDigit(data.charAt(idx))) {
-            idx++;
-        }
-        String word = data.substring(0, idx);
-        return switch (word) {
-            case "num", "dec", "for", "during", "if", "elif", "else" -> {
-                tokens.add(new Token("KEYWORD", word));
-                yield data.substring(idx).trim();
-            }
-            default -> {
-                tokens.add(new Token("IDENTIFIER", word));
-                yield data.substring(idx).trim();
-            }
-        };
-    }
-
-    // Literals
-    if (Character.isDigit(c)) {
-        int idx = 0;
-        while (idx < data.length() && Character.isDigit(data.charAt(idx))) {
-            idx++;
-        }
-        String num = data.substring(0, idx);
-        tokens.add(new Token("LITERAL", num));
-        return data.substring(idx).trim();
-    }
-
-    // Unknown
-    tokens.add(new Token("UNKNOWN", String.valueOf(c)));
-    return data.substring(1).trim();
 }
 
 void main() {
-
-    // transition_table[current_state][event] = next_state
+    // transition table
     States[][] transition_table = new States[States.values().length][Events.values().length];
 
     // START
-    transition_table[States.START.ordinal()][Events.NUM.ordinal()] = States.VAR_DEC;        // START -num-> VAR_DEC
-    transition_table[States.START.ordinal()][Events.DEC.ordinal()] = States.VAR_DEC;        // START -dec-> VAR_DEC
-    transition_table[States.START.ordinal()][Events.IDENTIFIER.ordinal()] = States.ASSIGN_LHS; // START -identifier-> ASSIGN_LHS
-    transition_table[States.START.ordinal()][Events.FOR.ordinal()] = States.FOR_LOOP;       // START -for-> FOR_LOOP
-    transition_table[States.START.ordinal()][Events.DURING.ordinal()] = States.WHILE_LOOP;  // START -during-> WHILE_LOOP
-    transition_table[States.START.ordinal()][Events.IF.ordinal()] = States.IF_STMT;         // START -if-> IF_STMT
-    transition_table[States.START.ordinal()][Events.ELIF.ordinal()] = States.ELIF_STMT;     // START -elif-> ELIF_STMT
-    transition_table[States.START.ordinal()][Events.ELSE.ordinal()] = States.ELSE_STMT;     // START -else-> ELSE_STMT
+    transition_table[States.START.ordinal()][Events.LETTER.ordinal()] = States.IDENTIFIER;
+    transition_table[States.START.ordinal()][Events.DIGIT.ordinal()] = States.NUMBER;
+    transition_table[States.START.ordinal()][Events.DOT.ordinal()] = States.ERROR;
+    transition_table[States.START.ordinal()][Events.OPERATOR.ordinal()] = States.OPERATOR;
+    transition_table[States.START.ordinal()][Events.DELIM.ordinal()] = States.DELIM;
+    transition_table[States.START.ordinal()][Events.WHITESPACE.ordinal()] = States.START;
+    transition_table[States.START.ordinal()][Events.UNKNOWN.ordinal()] = States.ERROR;
+    transition_table[States.START.ordinal()][Events.END.ordinal()] = States.ACCEPT;
 
-    //VAR_DEC
-    transition_table[States.VAR_DEC.ordinal()][Events.IDENTIFIER.ordinal()] = States.VAR_NAME_DEC;
+    // IDENTIFIER
+    transition_table[States.IDENTIFIER.ordinal()][Events.LETTER.ordinal()] = States.IDENTIFIER;
+    transition_table[States.IDENTIFIER.ordinal()][Events.DIGIT.ordinal()] = States.IDENTIFIER;
+    transition_table[States.IDENTIFIER.ordinal()][Events.WHITESPACE.ordinal()] = States.ACCEPT;
+    transition_table[States.IDENTIFIER.ordinal()][Events.OPERATOR.ordinal()] = States.ACCEPT;
+    transition_table[States.IDENTIFIER.ordinal()][Events.DELIM.ordinal()] = States.ACCEPT;
+    transition_table[States.IDENTIFIER.ordinal()][Events.END.ordinal()] = States.ACCEPT;
 
-    //VAR_NAME_DEC
-    transition_table[States.VAR_NAME_DEC.ordinal()][Events.VALUE.ordinal()] = States.VAR_INIT;
-    transition_table[States.VAR_NAME_DEC.ordinal()][Events.PIPE.ordinal()] = States.START;
+    // NUMBER
+    transition_table[States.NUMBER.ordinal()][Events.DIGIT.ordinal()] = States.NUMBER;
+    transition_table[States.NUMBER.ordinal()][Events.DOT.ordinal()] = States.DECIMAL;
+    transition_table[States.NUMBER.ordinal()][Events.WHITESPACE.ordinal()] = States.ACCEPT;
+    transition_table[States.NUMBER.ordinal()][Events.OPERATOR.ordinal()] = States.ACCEPT;
+    transition_table[States.NUMBER.ordinal()][Events.DELIM.ordinal()] = States.ACCEPT;
+    transition_table[States.NUMBER.ordinal()][Events.END.ordinal()] = States.ACCEPT;
 
-    //ASSIGN_LHS
-    transition_table[States.ASSIGN_LHS.ordinal()][Events.VALUE.ordinal()] = States.ASSIGN_VALUE;
+    // DECIMAL
+    transition_table[States.DECIMAL.ordinal()][Events.DIGIT.ordinal()] = States.DECIMAL;
+    transition_table[States.DECIMAL.ordinal()][Events.WHITESPACE.ordinal()] = States.ACCEPT;
+    transition_table[States.DECIMAL.ordinal()][Events.OPERATOR.ordinal()] = States.ACCEPT;
+    transition_table[States.DECIMAL.ordinal()][Events.DELIM.ordinal()] = States.ACCEPT;
+    transition_table[States.DECIMAL.ordinal()][Events.END.ordinal()] = States.ACCEPT;
+    transition_table[States.DECIMAL.ordinal()][Events.DOT.ordinal()] = States.ERROR;
 
-    //ASSIGN_VALUE
-    transition_table[States.ASSIGN_VALUE.ordinal()][Events.PIPE.ordinal()] = States.START;
+    // OPERATOR
+    transition_table[States.OPERATOR.ordinal()][Events.OPERATOR.ordinal()] = States.OPERATOR;
+    transition_table[States.OPERATOR.ordinal()][Events.WHITESPACE.ordinal()] = States.ACCEPT;
+    transition_table[States.OPERATOR.ordinal()][Events.LETTER.ordinal()] = States.ACCEPT;
+    transition_table[States.OPERATOR.ordinal()][Events.DIGIT.ordinal()] = States.ACCEPT;
+    transition_table[States.OPERATOR.ordinal()][Events.DELIM.ordinal()] = States.ACCEPT;
+    transition_table[States.OPERATOR.ordinal()][Events.END.ordinal()] = States.ACCEPT;
 
-    //WHILE_LOOP
-    transition_table[States.WHILE_LOOP.ordinal()][Events.PIPE.ordinal()] = States.WHILE_COND;
+    // DELIM
+    transition_table[States.DELIM.ordinal()][Events.WHITESPACE.ordinal()] = States.ACCEPT;
+    transition_table[States.DELIM.ordinal()][Events.LETTER.ordinal()] = States.ACCEPT;
+    transition_table[States.DELIM.ordinal()][Events.DIGIT.ordinal()] = States.ACCEPT;
+    transition_table[States.DELIM.ordinal()][Events.OPERATOR.ordinal()] = States.ACCEPT;
+    transition_table[States.DELIM.ordinal()][Events.DELIM.ordinal()] = States.ACCEPT;
+    transition_table[States.DELIM.ordinal()][Events.END.ordinal()] = States.ACCEPT;
 
+    // ACCEPT
+    for (Events e : Events.values()) {
+        transition_table[States.ACCEPT.ordinal()][e.ordinal()] = States.START;
+    }
 
+    // ERROR
+    for (Events e : Events.values()) {
+        transition_table[States.ERROR.ordinal()][e.ordinal()] = States.ERROR;
+    }
 
+    // Read source from main.cj file
     try {
         File myFile = new File("main.cj");
-        Scanner myReader = new Scanner(myFile);
+        Scanner reader = new Scanner(myFile);
+        List<Token> tokens = new ArrayList<>();
+        StringBuilder buffer = new StringBuilder();
 
-        States current_state = States.START;
+        // Starting state
+        States state = States.START;
 
-        while (myReader.hasNextLine()) {
-            String data = myReader.nextLine();
+        while (reader.hasNextLine()) {
+            String line = reader.nextLine();
 
-            boolean eof = false;
-            List<Token> tokens = new ArrayList<>();
+            for (int i = 0; i < line.length(); i++) {
+                char c = line.charAt(i);
+                Events event = classifyChar(c);
 
-            while (!eof) {
-                IO.println(current_state);
-                IO.println(tokens);
-                switch (current_state) {
+                States nextState = transition_table[state.ordinal()][event.ordinal()];
+                if (nextState == null) nextState = States.ERROR;
 
-                    if (data.isEmpty()) {
-                        eof = true;
-                        break;
+                if (nextState == States.ACCEPT) { // Character completes the token so emit to token list
+                    emitToken(tokens, buffer.toString(), state);
+                    buffer.setLength(0);
+                    state = States.START;
+
+                    if (event != Events.WHITESPACE) {
+                        i--;
                     }
-
-                    data = nextToken(tokens, data);
-                    Token last_token = tokens.getLast();
-                    case START -> {
-
-                    
-                        switch (last_token.type) {
-                            case "KEYWORD" -> {
-                                switch (last_token.value) {
-                                    case "num" ->
-                                            current_state = transition_table[current_state.ordinal()][Events.NUM.ordinal()];
-                                    case "dec" ->
-                                            current_state = transition_table[current_state.ordinal()][Events.DEC.ordinal()];
-                                    case "for" ->
-                                            current_state = transition_table[current_state.ordinal()][Events.FOR.ordinal()];
-                                    case "during" ->
-                                            current_state = transition_table[current_state.ordinal()][Events.DURING.ordinal()];
-                                    case "if" ->
-                                            current_state = transition_table[current_state.ordinal()][Events.IF.ordinal()];
-                                    case "elif" ->
-                                            current_state = transition_table[current_state.ordinal()][Events.ELIF.ordinal()];
-                                    case "else" ->
-                                            current_state = transition_table[current_state.ordinal()][Events.ELSE.ordinal()];
-                                }
-                            }
-                            case "IDENTIFIER" ->
-                                    current_state = transition_table[current_state.ordinal()][Events.IDENTIFIER.ordinal()];
-                            case "LITERAL" ->
-                                    current_state = transition_table[current_state.ordinal()][Events.VALUE.ordinal()];
-                            case "DELIM" ->
-                                    current_state = transition_table[current_state.ordinal()][Events.PIPE.ordinal()];
-                        }
-                    }
-
-                    case VAR_DEC -> {
-
-                        switch (last_token.type){
-                            case "IDENTIFIER" ->
-                                current_state = transition_table[current_state.ordinal()][Events.IDENTIFIER.ordinal()];
-                            default ->
-                                IO.println("Compilation Error: after the variable type should come the variable identifer");
-                        }
-
-                    }
-
-                    case VAR_NAME_DEC -> {
-                        
-                        switch(last_token.type){
-                            case "VALUE" -> 
-                                current_state = transition_table[current_state.ordinal()][Events.VALUE.ordinal()];
-                            case "DELIM" -> 
-                                if(last_token.value == ';'){
-                                    current_state = transition_table[current_state.ordinal()][Events.PIPE.ordinal()];
-                                }
-                                IO.println("Compilation Error: wrong delimiter used, end statements with \";\"");
-                            default ->
-                                IO.println("Compilation Error: must follow a name declaration with either a value or ;");
-                        }
-                    }
-
-                    case VAR_INIT -> {
-                        switch (last_token.type){
-                            case "DELIM" -> 
-                                if(last_token.value == ';'){
-                                    current_state = transition_table[current_state.ordinal()][Events.PIPE.ordinal()];
-                                }
-                                IO.println("Compilation Error: wrong delimiter used, end statements with \";\"");
-                            default ->
-                                IO.println("Compilation Error: must end an assignment with ;");
-                        }
-                    }
-
-                    case ASSIGN_LHS -> {
-                        switch (last_token.type){
-                            case "VALUE" -> 
-                                current_state = transition_table[current_state.ordinal()][Events.VALUE.ordinal()];
-                            default ->
-                                IO.println("Compilation Error: Need to follow a variable identifier with a value to assign it to");
-                        }
-                    }
-
-                    case ASSIGN_VALUE -> {
-                        switch (last_token.type){
-                            case "DELIM" -> 
-                                if(last_token.value == ';'){
-                                    current_state = transition_table[current_state.ordinal()][Events.PIPE.ordinal()];
-                                }
-                                IO.println("Compilation Error: wrong delimiter used, end statements with \";\"");
-                            default ->
-                                IO.println("Compilation Error: must end an assignment with ;");
-                        }
-                    }
-
-                    default -> eof = true;
+                } else if (nextState == States.ERROR) { // Character is invalid so add error token and clear buffer
+                    tokens.add(new Token("ERROR", String.valueOf(c)));
+                    buffer.setLength(0);
+                    state = States.START;
+                } else { // Character is valid so add to buffer for token
+                    buffer.append(c);
+                    state = nextState;
                 }
             }
-            for (Token t : tokens) {
-                IO.println(t);
+
+            // End of the line so if final token is valid add to token list.
+            States nextState = transition_table[state.ordinal()][Events.END.ordinal()];
+            if (nextState == States.ACCEPT) {
+                emitToken(tokens, buffer.toString(), state);
+                buffer.setLength(0);
+                state = States.START;
             }
         }
-        myReader.close();
+        reader.close();
+
+        if (!buffer.isEmpty()) {
+            emitToken(tokens, buffer.toString(), state);
+        }
+
+        for (Token t : tokens) {
+            System.out.println(t);
+        }
+
     } catch (FileNotFoundException e) {
-        System.out.println("An error occurred: File not found.");
-        e.printStackTrace();
+        System.out.println("Error: File not found.");
     }
 }
