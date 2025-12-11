@@ -12,13 +12,6 @@ public class Instruction {
 
     private Instruction() {}
 
-    /*
-     * bits 0-3   : opcode (0-9)
-     * bit 4      : 0
-     * bits 5-7   : cmp (0-6)
-     * bits 8-11  : r (0-15)
-     * bits 12-31 : a (0 .. 2^20-1)
-     */
     public static int encode(int opcode, int cmp, int r, int address) {
         int word = 0;
         word |= (opcode & 0xF);
@@ -28,6 +21,7 @@ public class Instruction {
         word |= (address & 0xFFFFF) << 12;
         return word;
     }
+
     public static int clr(int r) {
         return encode(OPC_CLR, 0, r, 0);
     }
